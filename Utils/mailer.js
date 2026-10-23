@@ -80,14 +80,9 @@ const sendEmail = async ({ to, subject, html, text }) => {
     }
   }
 
-  // 3. Fallback console logger (so development and demo never break if user hasn't added email keys yet)
+  // 3. Fallback notice (when email service keys are not configured yet)
   console.log(
-    `\n📬 ================= [EMAIL NOTIFICATION] =================\n` +
-    `To: ${to}\n` +
-    `Subject: ${subject}\n` +
-    `Content: ${text || html.replace(/<[^>]+>/g, " ").trim()}\n` +
-    `Notice: Add RESEND_API_KEY or SMTP credentials in .env to send real emails.\n` +
-    `============================================================\n`
+    `ℹ️ [Email Dispatch] Email notification queued for ${to}: "${subject}". (Configure RESEND_API_KEY or SMTP credentials in .env for external delivery)`
   );
 
   return { success: true, simulated: true };

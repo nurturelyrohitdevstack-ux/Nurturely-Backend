@@ -106,8 +106,6 @@ const sendOtp = asyncHandler(async (req, res) => {
     success: true,
     message: `Verification code sent to ${normalizedEmail}.`,
     resendAfter: 60,
-    // Returned for developer convenience if email API keys are in progress
-    ...(process.env.NODE_ENV !== "production" && { devOtp: otp }),
   });
 });
 
