@@ -9,18 +9,29 @@ const { getDbStatus } = require("./Config/db");
 const app = express();
 app.set("trust proxy", 1);
 
-// Allowed frontend origins (supports local Next.js dev on 3000, 3001, 3002, etc.)
-const allowedOrigins = [
-  process.env.Frontend_Url,
-].filter(Boolean);
+// Allowed frontend origins (supports configured production URLs and local port variations)
+const rawOrigins = process.env.Frontend_Url || "";
+const configuredOrigins = rawOrigins
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+const defaultOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
+];
+
+const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]));
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/+$/, "");
       if (
-        allowedOrigins.includes(origin) ||
+        allowedOrigins.includes(cleanOrigin) ||
         process.env.NODE_ENV !== "production"
       ) {
         return callback(null, true);

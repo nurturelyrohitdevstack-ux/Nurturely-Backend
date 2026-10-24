@@ -386,17 +386,21 @@ const refreshToken = asyncHandler(async (req, res) => {
   await session.save();
 
   const isProduction = process.env.NODE_ENV === "production";
+  const isHttps = Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https";
+  const secure = isProduction ? isHttps : false;
+  const sameSite = secure ? "none" : "lax";
+
   res.cookie("refreshToken", newRefreshToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   res.cookie("accessToken", newAccessToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     maxAge: 15 * 60 * 1000,
   });
 
@@ -442,18 +446,21 @@ const logout = asyncHandler(async (req, res) => {
   }
 
   const isProduction = process.env.NODE_ENV === "production";
+  const isHttps = Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https";
+  const secure = isProduction ? isHttps : false;
+  const sameSite = secure ? "none" : "lax";
 
   res.cookie("refreshToken", "", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     expires: new Date(0),
   });
 
   res.cookie("accessToken", "", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     expires: new Date(0),
   });
 
@@ -496,7 +503,22 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
   await user.save({ validateBeforeSave: false });
 
-  const clientUrl = process.env.Frontend_Url || "http://localhost:3000";
+  // Dynamically resolve client URL: prioritize env Frontend_Url, then request origin header
+  const reqOrigin = req.get("origin") || req.get("referer");
+  let clientUrl = (process.env.Frontend_Url || "").trim();
+  if (!clientUrl && reqOrigin) {
+    try {
+      const parsed = new URL(reqOrigin);
+      clientUrl = parsed.origin;
+    } catch (e) {
+      // Fallback
+    }
+  }
+  if (!clientUrl) {
+    clientUrl = "http://localhost:3002";
+  }
+  clientUrl = clientUrl.replace(/\/+$/, "");
+
   const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
   try {
@@ -510,7 +532,6 @@ const forgotPassword = asyncHandler(async (req, res) => {
       success: true,
       message:
         "If an account exists with that email, a password reset link has been sent.",
-      ...(process.env.NODE_ENV !== "production" && { devResetUrl: resetUrl }),
     });
   } catch (err) {
     user.resetPasswordToken = undefined;

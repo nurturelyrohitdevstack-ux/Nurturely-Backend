@@ -67,20 +67,23 @@ const sendTokenResponse = async (user, statusCode, res, message = "Success", req
   }
 
   const isProduction = process.env.NODE_ENV === "production";
+  const isHttps = req ? (Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https") : false;
+  const secure = isProduction ? isHttps : false;
+  const sameSite = secure ? "none" : "lax";
 
   // HTTP-only cookie for refresh token
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
   // Also set accessToken cookie
   res.cookie("accessToken", accessToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure,
+    sameSite,
     maxAge: 15 * 60 * 1000,
   });
 
