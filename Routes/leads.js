@@ -25,6 +25,7 @@ router
   .route("/:leadId")
   .get(getLeadById)
   .patch(updateLead)
+  .put(updateLead)
   .delete(authorize("admin"), deleteLead);
 
 router.patch("/:leadId/status", updateLeadStatus);

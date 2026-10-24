@@ -261,7 +261,7 @@ const updateLead = asyncHandler(async (req, res) => {
     });
   }
 
-  const editableFields = [
+  const simpleFields = [
     "fullName",
     "email",
     "phone",
@@ -269,20 +269,59 @@ const updateLead = asyncHandler(async (req, res) => {
     "jobTitle",
     "source",
     "priority",
-    "estimatedValue",
     "currency",
     "requirements",
-    "tags",
-    "lastContactedAt",
-    "nextFollowUpAt",
     "lostReason",
   ];
 
-  editableFields.forEach((field) => {
+  simpleFields.forEach((field) => {
     if (req.body[field] !== undefined) {
-      lead[field] = req.body[field];
+      lead[field] =
+        typeof req.body[field] === "string"
+          ? req.body[field].trim()
+          : req.body[field];
     }
   });
+
+  // Handle status update and log status activity
+  if (req.body.status !== undefined && req.body.status !== lead.status) {
+    const previousStatus = lead.status;
+    lead.status = req.body.status;
+    if (lead.status === "Won") lead.wonAt = new Date();
+    if (lead.status === "Lost") lead.lostAt = new Date();
+
+    await Activity.create({
+      lead: lead._id,
+      createdBy: req.user._id,
+      type: "status_change",
+      summary: `Stage updated to '${lead.status}' (via Lead Edit)`,
+      metadata: { previousStatus, newStatus: lead.status },
+    });
+  }
+
+  // Handle estimatedValue numeric conversion
+  if (req.body.estimatedValue !== undefined) {
+    lead.estimatedValue = Number(req.body.estimatedValue) || 0;
+  }
+
+  // Handle tags array or comma-separated string
+  if (req.body.tags !== undefined) {
+    lead.tags = Array.isArray(req.body.tags)
+      ? req.body.tags
+      : typeof req.body.tags === "string"
+      ? req.body.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [];
+  }
+
+  // Handle nextFollowUpAt date
+  if (req.body.nextFollowUpAt !== undefined) {
+    lead.nextFollowUpAt = req.body.nextFollowUpAt
+      ? new Date(req.body.nextFollowUpAt)
+      : null;
+  }
 
   if (req.user.role === "admin" && req.body.assignedTo !== undefined) {
     const previousAssignee = lead.assignedTo;
@@ -293,13 +332,25 @@ const updateLead = asyncHandler(async (req, res) => {
         lead: lead._id,
         createdBy: req.user._id,
         type: "assignment_change",
-        summary: `Lead assigned to user: ${lead.assignedTo || "Unassigned"}`,
+        summary: `Lead assignment updated`,
         metadata: { previousAssignee, newAssignee: lead.assignedTo },
       });
     }
   }
 
   await lead.save();
+
+  // Log activity for lead update
+  try {
+    await Activity.create({
+      lead: lead._id,
+      createdBy: req.user._id,
+      type: "note",
+      summary: `Lead details updated for '${lead.fullName}'`,
+    });
+  } catch (e) {
+    // Gracefully ignore activity logging error
+  }
 
   const updatedLead = await Lead.findById(lead._id)
     .populate("assignedTo", "fullName email role")
