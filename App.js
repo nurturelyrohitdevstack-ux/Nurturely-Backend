@@ -20,6 +20,8 @@ const defaultOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002",
+  "https://lead.rohitdevstack.online",
+  "http://lead.rohitdevstack.online",
 ];
 
 const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]));

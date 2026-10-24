@@ -44,6 +44,28 @@ const generateRefreshToken = (user) => {
   );
 };
 
+const getCookieOptions = (req, maxAge) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const isHttps = req ? (Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https") : false;
+  const secure = isProduction ? true : isHttps;
+  const sameSite = isProduction ? "none" : "lax";
+
+  // Share cookie across subdomains (*.rohitdevstack.online) in production
+  // so lead.rohitdevstack.online and api-lead.rohitdevstack.online share the cookie
+  const cookieDomain =
+    process.env.COOKIE_DOMAIN ||
+    (isProduction ? ".rohitdevstack.online" : undefined);
+
+  return {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: "/",
+    ...(maxAge !== undefined ? { maxAge } : {}),
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
+  };
+};
+
 const sendTokenResponse = async (user, statusCode, res, message = "Success", req = null) => {
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
@@ -66,26 +88,19 @@ const sendTokenResponse = async (user, statusCode, res, message = "Success", req
     // If sessions table not ready or unique index collision, continue gracefully
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
-  const isHttps = req ? (Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https") : false;
-  const secure = isProduction ? isHttps : false;
-  const sameSite = secure ? "none" : "lax";
+  // HTTP-only cookie for refresh token (7 days)
+  res.cookie(
+    "refreshToken",
+    refreshToken,
+    getCookieOptions(req, 7 * 24 * 60 * 60 * 1000)
+  );
 
-  // HTTP-only cookie for refresh token
-  res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure,
-    sameSite,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-
-  // Also set accessToken cookie
-  res.cookie("accessToken", accessToken, {
-    httpOnly: true,
-    secure,
-    sameSite,
-    maxAge: 15 * 60 * 1000,
-  });
+  // Also set accessToken cookie (15 min)
+  res.cookie(
+    "accessToken",
+    accessToken,
+    getCookieOptions(req, 15 * 60 * 1000)
+  );
 
   return res.status(statusCode).json({
     success: true,
@@ -108,6 +123,7 @@ module.exports = {
   generateAccessToken,
   generateRefreshToken,
   sendTokenResponse,
+  getCookieOptions,
   hashToken,
   ACCESS_SECRET,
   REFRESH_SECRET,

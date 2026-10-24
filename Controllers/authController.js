@@ -9,6 +9,7 @@ const {
   generateAccessToken,
   generateRefreshToken,
   sendTokenResponse,
+  getCookieOptions,
   hashToken,
   ACCESS_SECRET,
   REFRESH_SECRET,
@@ -385,24 +386,17 @@ const refreshToken = asyncHandler(async (req, res) => {
   session.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await session.save();
 
-  const isProduction = process.env.NODE_ENV === "production";
-  const isHttps = Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https";
-  const secure = isProduction ? isHttps : false;
-  const sameSite = secure ? "none" : "lax";
+  res.cookie(
+    "refreshToken",
+    newRefreshToken,
+    getCookieOptions(req, 7 * 24 * 60 * 60 * 1000)
+  );
 
-  res.cookie("refreshToken", newRefreshToken, {
-    httpOnly: true,
-    secure,
-    sameSite,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
-
-  res.cookie("accessToken", newAccessToken, {
-    httpOnly: true,
-    secure,
-    sameSite,
-    maxAge: 15 * 60 * 1000,
-  });
+  res.cookie(
+    "accessToken",
+    newAccessToken,
+    getCookieOptions(req, 15 * 60 * 1000)
+  );
 
   res.status(200).json({
     success: true,
@@ -445,24 +439,14 @@ const logout = asyncHandler(async (req, res) => {
     }
   }
 
-  const isProduction = process.env.NODE_ENV === "production";
-  const isHttps = Boolean(req.secure) || req.headers?.["x-forwarded-proto"] === "https";
-  const secure = isProduction ? isHttps : false;
-  const sameSite = secure ? "none" : "lax";
-
-  res.cookie("refreshToken", "", {
-    httpOnly: true,
-    secure,
-    sameSite,
+  const clearOptions = {
+    ...getCookieOptions(req),
     expires: new Date(0),
-  });
+  };
+  delete clearOptions.maxAge;
 
-  res.cookie("accessToken", "", {
-    httpOnly: true,
-    secure,
-    sameSite,
-    expires: new Date(0),
-  });
+  res.cookie("refreshToken", "", clearOptions);
+  res.cookie("accessToken", "", clearOptions);
 
   res.status(200).json({
     success: true,
