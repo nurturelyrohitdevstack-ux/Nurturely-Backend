@@ -3,6 +3,7 @@ const Lead = require("../Modals/Lead");
 const Task = require("../Modals/Task");
 const Activity = require("../Modals/Activity");
 const asyncHandler = require("../Utils/asyncHandler");
+const { syncLeadFollowUps, getTodayRange } = require("../Utils/taskSync");
 
 // Role boundary helper
 const getScopeQuery = (user) => {
@@ -16,11 +17,13 @@ const getScopeQuery = (user) => {
 // @route   GET /api/dashboard/summary
 // @access  Private
 const getDashboardSummary = asyncHandler(async (req, res) => {
+  // Sync follow-up tasks from active leads
+  await syncLeadFollowUps(req.user);
+
   const scope = getScopeQuery(req.user);
 
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  const { startOfToday, endOfToday } = getTodayRange(req.query.tzOffset);
   const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
   // Run aggregations and counts in parallel
@@ -106,7 +109,7 @@ const getDashboardSummary = asyncHandler(async (req, res) => {
 
     // Upcoming 5 tasks
     Task.find({ ...scope, status: "Pending", dueAt: { $gte: startOfToday } })
-      .populate("lead", "fullName company")
+      .populate("lead", "fullName company requirements")
       .sort({ dueAt: 1 })
       .limit(5)
       .lean(),

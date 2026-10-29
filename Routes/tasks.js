@@ -4,6 +4,8 @@ const {
   getTasks,
   createTask,
   updateTask,
+  rescheduleTask,
+  skipTask,
   completeTask,
   cancelTask,
   deleteTask,
@@ -18,5 +20,7 @@ router.route("/:taskId").patch(updateTask).delete(deleteTask);
 
 router.patch("/:taskId/complete", completeTask);
 router.patch("/:taskId/cancel", cancelTask);
+router.patch("/:taskId/reschedule", rescheduleTask);
+router.patch("/:taskId/skip", skipTask);
 
 module.exports = router;

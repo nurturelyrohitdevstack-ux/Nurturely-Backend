@@ -3,6 +3,7 @@ const Lead = require("../Modals/Lead");
 const Activity = require("../Modals/Activity");
 const Task = require("../Modals/Task");
 const asyncHandler = require("../Utils/asyncHandler");
+const { getTodayRange } = require("../Utils/taskSync");
 
 // Helper to enforce lead access rules
 const getLeadAccessQuery = (user) => {
@@ -29,6 +30,9 @@ const getLeads = asyncHandler(async (req, res) => {
     assignedTo,
     sortBy = "createdAt",
     order = "desc",
+    createdDate,
+    createdToday,
+    tzOffset,
   } = req.query;
 
   const pageNum = Math.max(1, parseInt(page, 10));
@@ -37,6 +41,13 @@ const getLeads = asyncHandler(async (req, res) => {
 
   // Base scope based on user role
   const query = { ...getLeadAccessQuery(req.user) };
+
+  const { startOfToday, endOfToday } = getTodayRange(tzOffset);
+
+  // Filter for leads created today
+  if (createdDate === "today" || createdToday === "true" || createdToday === true) {
+    query.createdAt = { $gte: startOfToday, $lte: endOfToday };
+  }
 
   // Status filter
   if (status && status !== "all") {
@@ -95,7 +106,13 @@ const getLeads = asyncHandler(async (req, res) => {
   const sortDirection = order === "asc" ? 1 : -1;
   const sort = { [sortField]: sortDirection };
 
-  const [leads, total] = await Promise.all([
+  const baseScope = getLeadAccessQuery(req.user);
+  const todayScope = {
+    ...baseScope,
+    createdAt: { $gte: startOfToday, $lte: endOfToday },
+  };
+
+  const [leads, total, todayCount, todaySourcesAgg] = await Promise.all([
     Lead.find(query)
       .populate("assignedTo", "fullName email role")
       .populate("createdBy", "fullName email")
@@ -104,6 +121,12 @@ const getLeads = asyncHandler(async (req, res) => {
       .limit(limitNum)
       .lean(),
     Lead.countDocuments(query),
+    Lead.countDocuments(todayScope),
+    Lead.aggregate([
+      { $match: todayScope },
+      { $group: { _id: "$source", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
   ]);
 
   res.status(200).json({
@@ -114,6 +137,13 @@ const getLeads = asyncHandler(async (req, res) => {
       page: pageNum,
       limit: limitNum,
       pages: Math.ceil(total / limitNum) || 1,
+    },
+    todayStats: {
+      totalToday: todayCount,
+      sources: todaySourcesAgg.map((s) => ({
+        source: s._id || "Other",
+        count: s.count,
+      })),
     },
   });
 });
@@ -219,6 +249,25 @@ const createLead = asyncHandler(async (req, res) => {
     nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt) : null,
   });
 
+  // Automatically create pending follow-up task if follow-up date was set
+  if (lead.nextFollowUpAt) {
+    try {
+      await Task.create({
+        title: `Follow-up with ${lead.fullName}`,
+        lead: lead._id,
+        assignedTo: lead.assignedTo || lead.createdBy || req.user._id,
+        createdBy: req.user._id,
+        type: "Call",
+        priority: lead.priority || "Medium",
+        dueAt: lead.nextFollowUpAt,
+        notes: lead.requirements ? `Scope: ${lead.requirements.slice(0, 150)}` : "",
+        status: "Pending",
+      });
+    } catch (e) {
+      console.error("Error creating initial follow-up task:", e);
+    }
+  }
+
   // Log initial activity
   await Activity.create({
     lead: lead._id,
@@ -321,6 +370,39 @@ const updateLead = asyncHandler(async (req, res) => {
     lead.nextFollowUpAt = req.body.nextFollowUpAt
       ? new Date(req.body.nextFollowUpAt)
       : null;
+
+    try {
+      if (lead.nextFollowUpAt) {
+        const existingTask = await Task.findOne({
+          lead: lead._id,
+          status: "Pending",
+        });
+        if (existingTask) {
+          existingTask.dueAt = lead.nextFollowUpAt;
+          await existingTask.save();
+        } else {
+          await Task.create({
+            title: `Follow-up with ${lead.fullName}`,
+            lead: lead._id,
+            assignedTo: lead.assignedTo || lead.createdBy || req.user._id,
+            createdBy: req.user._id,
+            type: "Call",
+            priority: lead.priority || "Medium",
+            dueAt: lead.nextFollowUpAt,
+            notes: lead.requirements ? `Scope: ${lead.requirements.slice(0, 150)}` : "",
+            status: "Pending",
+          });
+        }
+      } else {
+        // Cleared follow-up
+        await Task.updateMany(
+          { lead: lead._id, status: "Pending" },
+          { status: "Cancelled" }
+        );
+      }
+    } catch (e) {
+      console.error("Error updating lead follow-up task:", e);
+    }
   }
 
   if (req.user.role === "admin" && req.body.assignedTo !== undefined) {
@@ -413,6 +495,18 @@ const updateLeadStatus = asyncHandler(async (req, res) => {
     lead.lostReason = lostReason ? lostReason.trim() : "";
   } else {
     lead.lostReason = "";
+  }
+
+  if (status === "Won" || status === "Lost") {
+    lead.nextFollowUpAt = null;
+    try {
+      await Task.updateMany(
+        { lead: lead._id, status: "Pending" },
+        { status: status === "Won" ? "Completed" : "Cancelled" }
+      );
+    } catch (e) {
+      console.error("Error updating tasks on Won/Lost:", e);
+    }
   }
 
   await lead.save();

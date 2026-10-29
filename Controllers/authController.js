@@ -383,24 +383,25 @@ const refreshToken = asyncHandler(async (req, res) => {
 
   session.refreshTokenHash = hashToken(newRefreshToken);
   session.lastActive = new Date();
-  session.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  session.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await session.save();
 
   res.cookie(
     "refreshToken",
     newRefreshToken,
-    getCookieOptions(req, 7 * 24 * 60 * 60 * 1000)
+    getCookieOptions(req, 30 * 24 * 60 * 60 * 1000)
   );
 
   res.cookie(
     "accessToken",
     newAccessToken,
-    getCookieOptions(req, 15 * 60 * 1000)
+    getCookieOptions(req, 2 * 60 * 60 * 1000)
   );
 
   res.status(200).json({
     success: true,
     accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
     user: {
       id: user._id,
       fullName: user.fullName,
